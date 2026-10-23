@@ -46,6 +46,24 @@ Only use facts and numbers that are in the input. Never invent statistics.
 Reply with a single JSON object and nothing else. No markdown, no code fences.
 """
 
+TELUGU_STYLE = """
+TELUGU STYLE:
+- Write the way a Telugu TV commentator speaks to fans: natural spoken Telugu in Telugu
+  script, not a word-by-word translation of English.
+- Use natural Telugu word order (subject, object, verb), with the verb at the end.
+  Wrong: "నీ Ultras తీసుకుంటుంది గేమ్"   Right: "గేమ్ Ultras చేతుల్లోకి వెళ్తోంది"
+- Prefer the phrases Telugu commentators really use over literal translations.
+  Example: for "Ultras are taking control", say "గేమ్ Ultras చేతుల్లోకి వెళ్తోంది"
+  (the game is going into Ultras' hands), not a word-by-word "take" sentence.
+- "ని" after a noun is the object marker (గేమ్‌ని, బాల్‌ని). Never confuse it with "నీ" (your).
+- Keep ONE consistent register: address the viewer as "మీరు" or not at all.
+  For a supporter of the club involved, "మన" (our) is good: "మన Ultras".
+- Keep player and club names in English letters.
+- Keep football words Telugu fans say in English (goal, pass, press, possession,
+  equaliser, momentum) in English letters, inside a proper Telugu sentence.
+- Short, clear sentences. Read your sentence back once: if it sounds translated, rewrite it.
+"""
+
 PUNDIT = SHARED_RULES + """
 You are the Pundit: an experienced football analyst.
 Input: a key moment flagged by the stats engine, plus the current match stats.
@@ -94,11 +112,9 @@ Rules:
 - If the viewer's club is involved, speak to them as a supporter of that club.
 - In player_focus mode, mention the favourite player and how the moment affects them,
   but never invent stats for that player.
-- For Telugu, write natural, conversational Telugu in Telugu script, the way a
-  Telugu commentator would speak. Keep player and club names in English letters.
-  Common football words (goal, pass, press) may stay in English if that is how
-  Telugu fans naturally say them.
-
+- Talk TO the viewer about the match. Never give orders or advice to the players or team.
+- For Telugu (language "te"), follow TELUGU STYLE below.
+""" + TELUGU_STYLE + """
 Return JSON with exactly these keys:
 {
   "headline": max 6 words,
@@ -115,8 +131,8 @@ Input: final stats, the list of key moments, and a viewer profile
 
 Write the recap for that viewer: analyst = tactical and numerical,
 casual = story-like and simple, player_focus = built around their player.
-Use Telugu script if language is "te", keeping names in English letters.
-
+If language is "te", follow the TELUGU STYLE rules below.
+""" + TELUGU_STYLE + """
 Return JSON with exactly these keys:
 {
   "title": max 8 words,
