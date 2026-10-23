@@ -1,6 +1,6 @@
 # AgPitch - progress notes
 
-Keeping track of what I've built and what's left, so I don't lose the thread between sessions.
+Keeping track of what I've built and what's left !
 
 ## What I decided
 - Going for the Synthetic Match Insights Engine challenge
