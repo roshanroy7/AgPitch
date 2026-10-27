@@ -46,22 +46,17 @@ Only use facts and numbers that are in the input. Never invent statistics.
 Reply with a single JSON object and nothing else. No markdown, no code fences.
 """
 
-TELUGU_STYLE = """
-TELUGU STYLE:
-- Write the way a Telugu TV commentator speaks to fans: natural spoken Telugu in Telugu
-  script, not a word-by-word translation of English.
-- Use natural Telugu word order (subject, object, verb), with the verb at the end.
-  Wrong: "నీ Ultras తీసుకుంటుంది గేమ్"   Right: "గేమ్ Ultras చేతుల్లోకి వెళ్తోంది"
-- Prefer the phrases Telugu commentators really use over literal translations.
-  Example: for "Ultras are taking control", say "గేమ్ Ultras చేతుల్లోకి వెళ్తోంది"
-  (the game is going into Ultras' hands), not a word-by-word "take" sentence.
-- "ని" after a noun is the object marker (గేమ్‌ని, బాల్‌ని). Never confuse it with "నీ" (your).
-- Keep ONE consistent register: address the viewer as "మీరు" or not at all.
-  For a supporter of the club involved, "మన" (our) is good: "మన Ultras".
-- Keep player and club names in English letters.
-- Keep football words Telugu fans say in English (goal, pass, press, possession,
-  equaliser, momentum) in English letters, inside a proper Telugu sentence.
-- Short, clear sentences. Read your sentence back once: if it sounds translated, rewrite it.
+LANGUAGE_STYLE = """
+LANGUAGE:
+- "en": English.
+- "es": Latin American Spanish, the way a TV football commentator in Mexico or Argentina
+  speaks to fans ("golazo", "atajada", "contragolpe", "tarjeta amarilla").
+- "pt": Brazilian Portuguese, the way a Brazilian TV narrator speaks to fans
+  ("golaço", "defesaça", "contra-ataque", "cartão amarelo").
+- Write natively in that language. Never translate word by word from English.
+- Keep player and club names exactly as they are.
+- Numbers and stats stay identical to the input; only the words change.
+- Every text field (headline, body, stat label, title, summary...) must be in that language.
 """
 
 PUNDIT = SHARED_RULES + """
@@ -105,7 +100,7 @@ Input: the overlay, the Pundit's analysis, and a viewer profile with:
         "player_focus" (relate everything to their favourite player)
   favourite_club: the team the viewer supports, or null
   favourite_player: a player name, or null
-  language: "en" (English) or "te" (Telugu)
+  language: "en" (English), "es" (Spanish) or "pt" (Portuguese)
 
 Rules:
 - Analyst and casual must feel genuinely different, not just shorter or longer.
@@ -113,13 +108,15 @@ Rules:
 - In player_focus mode, mention the favourite player and how the moment affects them,
   but never invent stats for that player.
 - Talk TO the viewer about the match. Never give orders or advice to the players or team.
-- For Telugu (language "te"), follow TELUGU STYLE below.
-""" + TELUGU_STYLE + """
+- Write in the viewer's language, following LANGUAGE below.
+""" + LANGUAGE_STYLE + """
 Return JSON with exactly these keys:
 {
   "headline": max 6 words,
   "body": max 25 words,
   "stat": {"label": short label, "value": value} or null,
+  "why": the Pundit's explanation of why this moment matters, rewritten for this viewer
+         (their mode and language), 2 sentences, max 45 words,
   "tone": a single word describing the tone you used
 }
 """
@@ -131,8 +128,8 @@ Input: final stats, the list of key moments, and a viewer profile
 
 Write the recap for that viewer: analyst = tactical and numerical,
 casual = story-like and simple, player_focus = built around their player.
-If language is "te", follow the TELUGU STYLE rules below.
-""" + TELUGU_STYLE + """
+Write in the viewer's language, following LANGUAGE below.
+""" + LANGUAGE_STYLE + """
 Return JSON with exactly these keys:
 {
   "title": max 8 words,
@@ -259,8 +256,8 @@ def test():
     card = timed("Overlay", overlay, goal, analysis)
     timed("Fan: analyst, English", fan, card, analysis,
           {"mode": "analyst", "favourite_club": None, "favourite_player": None, "language": "en"})
-    timed("Fan: casual Ultras fan, Telugu", fan, card, analysis,
-          {"mode": "casual", "favourite_club": "Ultras", "favourite_player": None, "language": "te"})
+    timed("Fan: casual Ultras fan, Spanish", fan, card, analysis,
+          {"mode": "casual", "favourite_club": "Ultras", "favourite_player": None, "language": "es"})
 
 
 if __name__ == "__main__":

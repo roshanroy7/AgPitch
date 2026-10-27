@@ -12,6 +12,7 @@ Then open:
     http://localhost:8000/                 health check
     http://localhost:8000/match            teams and players
     http://localhost:8000/stream           the live match stream
+    http://localhost:8000/warmup?...       prepare all insights for one profile
 
 Stream options (all optional):
     speed=30           match seconds per real second
@@ -20,10 +21,10 @@ Stream options (all optional):
     mode=casual        analyst | casual | player_focus
     club=Ultras        favourite club
     player=...         favourite player (needed for player_focus)
-    language=en        en | te (Telugu)
+    language=en        en (English) | es (Spanish) | pt (Portuguese)
 
 Example:
-    /stream?speed=10&from_minute=60&mode=casual&club=Ultras&language=te
+    /stream?speed=10&from_minute=60&mode=casual&club=Ultras
 
 Message types sent down the stream:
     start    match info and the viewer profile
@@ -43,11 +44,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from .orchestrator import Orchestrator
+from .orchestrator import Orchestrator, clear_language, configure_cache, warm_up
 from .stats import StatsEngine
 
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "match_001.json"
 MATCH = json.loads(DATA_FILE.read_text())
+configure_cache(DATA_FILE)
 TEAMS = [MATCH["info"]["home"], MATCH["info"]["away"]]
 PLAYERS = {p["name"] for t in TEAMS for p in MATCH["info"]["teams"][t]["players"]}
 
@@ -74,8 +76,8 @@ def seconds_of(event):
 def build_profile(mode, club, player, language):
     if mode not in ("analyst", "casual", "player_focus"):
         raise HTTPException(400, "mode must be analyst, casual or player_focus")
-    if language not in ("en", "te"):
-        raise HTTPException(400, "language must be en or te")
+    if language not in ("en", "es", "pt"):
+        raise HTTPException(400, "language must be en, es or pt")
     if club and club not in TEAMS:
         raise HTTPException(400, f"club must be one of {TEAMS}")
     if player and player not in PLAYERS:
@@ -93,6 +95,26 @@ def health():
 @app.get("/match")
 def match_info():
     return MATCH["info"]
+
+
+@app.get("/warmup")
+async def warmup(
+    mode: str = Query("casual"),
+    club: str | None = Query(None),
+    player: str | None = Query(None),
+    language: str = Query("en"),
+):
+    """Run every key moment through the agents now, so a broadcast with this
+    profile gets every insight exactly on time. Takes a few minutes the first
+    time; after that the results come from the cache on disk."""
+    profile = build_profile(mode, club, player, language)
+    return await warm_up(MATCH, StatsEngine, profile)
+
+
+@app.get("/cache/clear")
+def cache_clear(language: str = Query(...)):
+    """Forget the prepared cards and recaps in one language, so they get rebuilt."""
+    return {"language": language, "removed": clear_language(language)}
 
 
 @app.get("/stream")

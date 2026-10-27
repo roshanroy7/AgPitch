@@ -109,11 +109,16 @@ GOALS = [
     {"time": 87 * 60 + 5,  "team": "Ultras", "scorer": "Danny Marsh", "assist": "Roshan Palem"},
 ]
 
+# Players in the scripted goals never get sent off, so the story always holds
+PROTECTED = {name for g in GOALS for name in (g["scorer"], g["assist"])}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 events = []
+cards = {}       # player -> yellow cards so far
+sent_off = set() # players with a red card
 score = {"Kryptonites": 0, "Ultras": 0}
 
 
@@ -137,7 +142,7 @@ def pick_player(team, phase, exclude=None, outfield_only=False):
     """Pick who gets the ball. Midfielders and the phase's star get more touches."""
     names, weights = [], []
     for p in players_of(team):
-        if p["name"] == exclude:
+        if p["name"] == exclude or p["name"] in sent_off:
             continue
         if outfield_only and p["position"] == "GK":
             continue
@@ -173,12 +178,29 @@ def flip(pos):
 # 4. A normal possession chain
 # ---------------------------------------------------------------------------
 
-def play_chain(clock, team, start, half_end):
+def keeper_of(team):
+    return next(p["name"] for p in players_of(team) if p["position"] == "GK")
+
+
+def corner_taker(team, phase):
+    names = [p["name"] for p in players_of(team)
+             if p["position"] in ("RW", "LW", "CAM") and p["name"] not in sent_off]
+    return random.choice(names)
+
+
+def play_chain(clock, team, start, half_end, counter=False):
     """One team keeps the ball until they lose it or shoot.
-    Returns (new clock, team with the ball next, where the ball is)."""
+    Returns (new clock, team with the ball next, where the ball is, is_counter)."""
     phase = phase_at(clock)
     ball = start
     holder = pick_player(team, phase, outfield_only=ball[0] > 20)
+    fast_passes = 0
+    set_piece = False  # True right after a corner is delivered into the box
+
+    if counter:
+        # Won the ball deep and broke forward quickly
+        add_event(clock, type="counter_attack", team=team, player=holder, position=ball)
+        fast_passes = 2
 
     while clock < half_end:
         phase = phase_at(clock)
@@ -186,41 +208,113 @@ def play_chain(clock, team, start, half_end):
         under_pressure = random.random() < (0.55 if pressed else 0.2)
 
         # Occasional sprint, used for speed alerts on screen
-        if random.random() < 0.04:
+        if random.random() < (0.25 if fast_passes else 0.04):
             add_event(clock, type="sprint", team=team, player=holder,
                       top_speed_kmh=round(random.uniform(27, 35), 1),
                       distance_m=round(random.uniform(15, 45), 1))
 
-        # Near the box: chance to shoot
-        if ball[0] > 80 and random.random() < 0.09:
-            on_target = random.random() < 0.4
+        # Near the box: chance to shoot (much higher on a counter or from a corner)
+        if set_piece:
+            shoot_chance = 0.45
+        elif counter:
+            shoot_chance = 0.3
+        else:
+            shoot_chance = 0.09
+        if ball[0] > (72 if counter else 80) and random.random() < shoot_chance:
+            roll = random.random()
+            outcome = "saved" if roll < 0.4 else "blocked" if roll < 0.65 else "off_target"
+            speed = round(random.uniform(60, 115), 1)
             add_event(clock, type="shot", team=team, player=holder, start=ball,
-                      shot_speed_kmh=round(random.uniform(60, 115), 1),
-                      on_target=on_target,
-                      outcome="saved" if on_target else random.choice(["off_target", "blocked"]),
-                      under_pressure=under_pressure)
-            clock += random.uniform(8, 20)
-            return clock, other(team), [8, 50]  # goal kick or keeper's ball
+                      shot_speed_kmh=speed, on_target=outcome == "saved",
+                      outcome=outcome, under_pressure=under_pressure,
+                      header=set_piece, from_counter=counter)
+            clock += random.uniform(2, 4)
 
-        # Small chance of a foul by the defending team
-        if random.random() < 0.025:
-            fouler = pick_player(other(team), phase)
+            if outcome == "saved":
+                add_event(clock, type="save", team=other(team), player=keeper_of(other(team)),
+                          shooter=holder, shot_speed_kmh=speed)
+
+            # Saves pushed wide and blocks often go out for a corner
+            corner_chance = {"saved": 0.35, "blocked": 0.5, "off_target": 0.0}[outcome]
+            if random.random() < corner_chance:
+                clock += random.uniform(12, 25)
+                side = random.choice(["left", "right"])
+                taker = corner_taker(team, phase)
+                ball = [99, 2 if side == "left" else 98]
+                add_event(clock, type="corner", team=team, player=taker, side=side, position=ball)
+                clock += random.uniform(3, 6)
+
+                # The delivery into the box
+                target = [clamp(random.uniform(88, 95)), clamp(random.uniform(35, 65))]
+                receiver = pick_player(team, phase, exclude=taker, outfield_only=True)
+                won = random.random() < 0.45
+                add_event(clock, type="pass", team=team, player=taker,
+                          receiver=receiver if won else None, start=ball, end=target,
+                          outcome="success" if won else "fail", under_pressure=True, corner=True)
+                clock += random.uniform(1, 2)
+                if won:
+                    holder, ball, set_piece, counter = receiver, target, True, False
+                    continue
+                defender = pick_player(other(team), phase, outfield_only=True)
+                where = flip(target)
+                add_event(clock, type="clearance", team=other(team), player=defender, position=where)
+                add_event(clock, type="possession_change", team=other(team), position=where)
+                return clock + random.uniform(1, 3), other(team), where, False
+
+            clock += random.uniform(6, 16)
+            return clock, other(team), [8, 50], False  # goal kick or keeper's ball
+
+        set_piece = False
+
+        # Small chance of a foul by the defending team (more when pressing hard)
+        if random.random() < (0.035 if pressed else 0.025):
+            fouler = pick_player(other(team), phase, outfield_only=True)
+            hard = random.random() < 0.3
             add_event(clock, type="foul", team=other(team), player=fouler,
-                      fouled=holder, position=flip(ball))
-            clock += random.uniform(10, 25)
+                      fouled=holder, position=flip(ball), hard=hard)
+            clock += random.uniform(5, 10)
+
+            # Hard fouls can bring a yellow card (two yellows = red)
+            if hard and random.random() < 0.6 and fouler not in PROTECTED:
+                cards[fouler] = cards.get(fouler, 0) + 1
+                if cards[fouler] == 1:
+                    add_event(clock, type="yellow_card", team=other(team), player=fouler,
+                              reason="hard foul", fouled=holder)
+                elif fouler not in sent_off:
+                    sent_off.add(fouler)
+                    add_event(clock, type="red_card", team=other(team), player=fouler,
+                              reason="second yellow", fouled=holder)
+                clock += random.uniform(15, 30)
+
+            # ...and sometimes an injury: treatment on the pitch, then play on
+            if hard and random.random() < 0.3:
+                add_event(clock, type="injury", team=team, player=holder,
+                          treatment_seconds=int(random.uniform(45, 120)))
+                clock += random.uniform(60, 120)
+
+            clock += random.uniform(5, 15)
             continue  # same team keeps the ball for the free kick
 
-        # Pass
-        long_ball = random.random() < 0.12
-        forward = random.uniform(10, 35) if long_ball else random.uniform(-6, 14)
-        sideways = random.uniform(-25, 25) if long_ball else random.uniform(-14, 14)
+        # Pass (a counter-attack starts with quick, direct forward passes)
+        if fast_passes:
+            long_ball = True
+            forward = random.uniform(18, 30)
+            sideways = random.uniform(-15, 15)
+        else:
+            long_ball = random.random() < 0.12
+            forward = random.uniform(10, 35) if long_ball else random.uniform(-6, 14)
+            sideways = random.uniform(-25, 25) if long_ball else random.uniform(-14, 14)
         target = [clamp(ball[0] + forward), clamp(ball[1] + sideways, 3, 97)]
 
-        success_chance = 0.85 + phase["control"].get(team, 0)
-        if under_pressure:
-            success_chance -= 0.15
-        if long_ball:
-            success_chance -= 0.2
+        if fast_passes:
+            success_chance = 0.8
+            fast_passes -= 1
+        else:
+            success_chance = 0.85 + phase["control"].get(team, 0)
+            if under_pressure:
+                success_chance -= 0.15
+            if long_ball:
+                success_chance -= 0.2
         success = random.random() < success_chance
 
         receiver = pick_player(team, phase, exclude=holder, outfield_only=True)
@@ -229,7 +323,7 @@ def play_chain(clock, team, start, half_end):
                   start=ball, end=target,
                   outcome="success" if success else "fail",
                   under_pressure=under_pressure)
-        clock += random.uniform(2, 5)
+        clock += random.uniform(1.5, 3) if counter else random.uniform(2, 5)
 
         if success:
             holder = receiver
@@ -244,9 +338,11 @@ def play_chain(clock, team, start, half_end):
                   team=winner, player=defender, position=where)
         add_event(clock, type="possession_change", team=winner, position=where)
         clock += random.uniform(1, 3)
-        return clock, winner, where
+        # Won it in their own half: sometimes they break on the counter
+        breaks = where[0] < 45 and random.random() < 0.12
+        return clock, winner, where, breaks
 
-    return clock, team, ball
+    return clock, team, ball, counter
 
 
 # ---------------------------------------------------------------------------
@@ -301,14 +397,16 @@ def play_half(clock, half_end, team):
     add_event(clock, type="kickoff", team=team, player=pick_player(team, phase_at(clock)))
     ball = [50, 50]
     goals_left = [g for g in GOALS if clock <= g["time"] < half_end]
+    counter = False
 
     while clock < half_end:
         if goals_left and clock >= goals_left[0]["time"] - 30:
             clock, team = play_goal(goals_left.pop(0))
             add_event(clock, type="kickoff", team=team, player=pick_player(team, phase_at(clock)))
             ball = [50, 50]
+            counter = False
             continue
-        clock, team, ball = play_chain(clock, team, ball, half_end)
+        clock, team, ball, counter = play_chain(clock, team, ball, half_end, counter)
         clock += random.uniform(1, 4)
 
 

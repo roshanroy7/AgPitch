@@ -33,6 +33,7 @@ PRESSURE_WINDOW = 5 * 60
 PRESSURE_SHARE = 0.5            # half of a team's passes under pressure
 SPRINT_ALERT_KMH = 33
 ROCKET_SHOT_KMH = 100
+BIG_SAVE_KMH = 90               # saves from shots this fast are key moments
 PASS_MILESTONES = (50,)
 COOLDOWN = 8 * 60               # same kind of moment, same team: wait this long
 
@@ -89,6 +90,8 @@ class StatsEngine:
             "difficulty_total": 0.0, "passes_under_pressure": 0,
             "shots": 0, "shots_on_target": 0, "fastest_shot_kmh": 0.0,
             "tackles": 0, "interceptions": 0, "fouls": 0, "turnovers": 0,
+            "saves": 0, "corners": 0, "counter_attacks": 0, "clearances": 0,
+            "yellow_cards": 0, "red_cards": 0, "hard_fouls": 0,
         }
 
     @staticmethod
@@ -97,7 +100,7 @@ class StatsEngine:
             "team": team, "number": p["number"], "position": p["position"],
             "touches": 0, "passes": 0, "passes_completed": 0,
             "difficulty_total": 0.0, "shots": 0, "goals": 0, "assists": 0,
-            "tackles": 0, "interceptions": 0, "top_speed_kmh": 0.0,
+            "tackles": 0, "interceptions": 0, "top_speed_kmh": 0.0, "saves": 0,
         }
 
     # --------------------------------------------------------------- update
@@ -128,8 +131,38 @@ class StatsEngine:
             self.team[team][kind + "s"] += 1
             if player:
                 player[kind + "s"] += 1
+        elif kind == "save":
+            self.team[team]["saves"] += 1
+            player["saves"] += 1
+            if event["shot_speed_kmh"] >= BIG_SAVE_KMH:
+                new.append(self._moment("big_save", event, team, event["player"],
+                                        f"Big save! {event['player']} denies {event['shooter']}",
+                                        {"shot_speed_kmh": event["shot_speed_kmh"],
+                                         "shooter": event["shooter"]},
+                                        cooldown=5 * 60))
+        elif kind == "corner":
+            self.team[team]["corners"] += 1
+        elif kind == "clearance":
+            self.team[team]["clearances"] += 1
+        elif kind == "counter_attack":
+            self.team[team]["counter_attacks"] += 1
+            new.append(self._moment("counter_attack", event, team, event["player"],
+                                    f"{team} break on the counter",
+                                    {"started_by": event["player"],
+                                     "counter_attacks": self.team[team]["counter_attacks"]},
+                                    cooldown=6 * 60))
+        elif kind in ("yellow_card", "red_card"):
+            self.team[team][kind + "s"] += 1
+            colour = "Yellow" if kind == "yellow_card" else "Red"
+            new.append(self._moment(kind, event, team, event["player"],
+                                    f"{colour} card for {event['player']}",
+                                    {"reason": event.get("reason"), "fouled": event.get("fouled"),
+                                     "team_" + kind + "s": self.team[team][kind + "s"]},
+                                    cooldown=0))
         elif kind == "foul":
             self.team[team]["fouls"] += 1
+            if event.get("hard"):
+                self.team[team]["hard_fouls"] += 1
         elif kind == "sprint":
             player["top_speed_kmh"] = max(player["top_speed_kmh"], event["top_speed_kmh"])
             if event["top_speed_kmh"] >= SPRINT_ALERT_KMH:
@@ -145,6 +178,7 @@ class StatsEngine:
                                     self.snapshot()))
 
         new += self._check_rules(event)
+        new = [m for m in new if m]  # drop moments skipped by the cooldown
         self.moments += new
         return new
 
@@ -252,7 +286,7 @@ class StatsEngine:
                 cooldown=COOLDOWN, cooldown_key=None):
         """Create a key moment, unless the same kind fired too recently."""
         key = cooldown_key or (kind, team)
-        always = kind in ("goal", "half_time", "full_time", "milestone")
+        always = kind in ("goal", "half_time", "full_time", "milestone", "yellow_card", "red_card")
         if not always and now_minus(self.clock, self.last_fired.get(key)) < cooldown:
             return None
         self.last_fired[key] = self.clock
@@ -304,6 +338,11 @@ class StatsEngine:
                 "interceptions": t["interceptions"],
                 "fouls": t["fouls"],
                 "turnovers": t["turnovers"],
+                "saves": t["saves"],
+                "corners": t["corners"],
+                "counter_attacks": t["counter_attacks"],
+                "yellow_cards": t["yellow_cards"],
+                "red_cards": t["red_cards"],
             }
         return {
             "minute": self.clock // 60,
