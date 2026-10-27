@@ -38,6 +38,7 @@ Message types sent down the stream:
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -56,9 +57,15 @@ PLAYERS = {p["name"] for t in TEAMS for p in MATCH["info"]["teams"][t]["players"
 app = FastAPI(title="AgPitch API", version="0.2.0")
 
 # Let the Next.js frontend (running on port 3000) call this server
+# Which websites may call this API: localhost for development, plus the deployed
+# frontend's URL(s), passed in as a comma-separated ALLOWED_ORIGINS setting.
+ORIGINS = ["http://localhost:3000"] + [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ORIGINS,
     allow_methods=["GET"],
     allow_headers=["*"],
 )

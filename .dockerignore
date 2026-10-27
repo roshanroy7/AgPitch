@@ -1,0 +1,8 @@
+# Only the backend goes into the container
+.git
+.venv
+.env
+frontend
+**/__pycache__
+**/.DS_Store
+*.md
