@@ -6,7 +6,7 @@ Built for the **Inside the Game: Developer Hackathon** (Microsoft + Premier Leag
 
 > Demo video: _(link coming)_
 
----
+> Live app: https://thankful-rock-0c1b05c0f.6.azurestaticapps.net
 
 ## Why I built this
 
@@ -75,6 +75,14 @@ All teams and players are made up.
 - **Python 3.13, FastAPI, Server-Sent Events** for the backend
 - **Next.js 16 + React 19** for the frontend, plain CSS
 - `azure-ai-projects` and `azure-identity`: login uses `az login`, no API keys in the code
+
+## Deployment
+
+- **Backend:** Azure Container Apps (Sweden Central), one always-on replica so there's no cold start
+- **Frontend:** Azure Static Web Apps, built as a static export with the API address baked in
+- **Container image:** built by GitHub Actions on every push and stored in GitHub Container Registry (my free-trial subscription doesn't allow building images inside Azure, so I moved the build to GitHub)
+- **Access to the agents:** the backend uses a managed identity with the Cognitive Services User role on the Foundry resource. No API keys anywhere
+- **CORS:** the API only accepts requests from localhost and the deployed frontend
 
 ## Run it locally
 
@@ -145,7 +153,6 @@ frontend/
 ## What I'd do next
 
 - Auto-eventing: generating these events from video instead of synthetic data
-- Deploy the backend on Azure Container Apps and the frontend on Static Web Apps
 - More languages, and checking each one with native speakers. I tried Telugu (my own language) first and the output wasn't good enough, so I left it out rather than ship something I wouldn't watch myself
 - A momentum chart across the whole match
 
