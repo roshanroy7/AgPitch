@@ -4,7 +4,7 @@ Live football match insights that explain *why* the game is changing, written fo
 
 Built for the **Inside the Game: Developer Hackathon** (Microsoft + Premier League), challenge: *The Synthetic Match Insights Engine for Premier League Studio*.
 
-> Demo video: _(link coming)_
+> Demo video: https://youtu.be/Nov0eNelsuE
 
 > Live app: https://thankful-rock-0c1b05c0f.6.azurestaticapps.net
 
